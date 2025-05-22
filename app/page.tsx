@@ -7,6 +7,7 @@ import Footer from "@/components/footer"
 import DisclaimerModal from "@/components/disclaimer-modal"
 import ContactForm from "@/components/contact-form"
 import { Shovel, Gem, Scroll, Skull, Coins, Bomb, AlertTriangle, X } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export default function Home() {
   const [showAgeVerification, setShowAgeVerification] = useState(false)
@@ -103,6 +104,14 @@ export default function Home() {
               Közösségi platform a régészeti kalandok szerelmeseinek. Játssz ingyen, versenyezz barátaiddal és hódítsd
               meg az ősi civilizációk virtuális romjait!
             </p>
+
+            <Button
+              onClick={() => setShowAgeVerification(true)}
+              size="lg"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xl px-8 py-6 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 animate-fadeInUp"
+            >
+              Játék
+            </Button>
 
             <div className="mt-16 relative">
               <Image
@@ -239,6 +248,14 @@ export default function Home() {
                       pénz nyereményre vagy veszteségre.
                     </p>
                   </div>
+
+                  <Button
+                    onClick={() => setShowAgeVerification(true)}
+                    size="lg"
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300"
+                  >
+                    Játék most
+                  </Button>
                 </div>
 
                 <div className="relative">
@@ -333,6 +350,13 @@ export default function Home() {
               </div>
 
               <div className="text-center">
+                <Button
+                  onClick={() => setShowAgeVerification(true)}
+                  size="lg"
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-8 py-4 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
+                >
+                  Kezdj játszani most
+                </Button>
                 <p className="text-sm text-gray-500 mt-4">
                   A játék kizárólag 18 éven felüli felhasználók számára készült.
                 </p>
