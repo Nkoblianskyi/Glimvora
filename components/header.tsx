@@ -98,12 +98,6 @@ export default function Header() {
               )}
             </div>
 
-            <Link
-              href="#contact"
-              className="px-3 py-2 text-gray-700 hover:text-amber-600 rounded-md transition-colors font-medium"
-            >
-              Kapcsolat
-            </Link>
           </nav>
 
           {/* Мобільне меню */}
@@ -164,13 +158,6 @@ export default function Header() {
                 </Link>
               </div>
 
-              <Link
-                href="#contact"
-                className="px-3 py-2 text-gray-700 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors font-medium"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Kapcsolat
-              </Link>
             </nav>
           </div>
         </div>
