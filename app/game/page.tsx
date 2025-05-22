@@ -1,196 +1,271 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import Header from "@/components/header"
 import Footer from "@/components/footer"
 import DisclaimerModal from "@/components/disclaimer-modal"
-import { Gem, Shovel, Skull, Bomb, Coins, Scroll } from "lucide-react"
+import { Gem, Shovel, Skull, Bomb, Coins, Scroll, Star, ChevronUp, ArrowRight } from "lucide-react"
 
-// A mezőn található elemek típusai
-type ItemType = "műtárgy" | "kincs" | "koponya" | "bomba" | "érmék" | "tekercs"
+// Типи символів
+type SymbolType = "gem" | "coins" | "skull" | "bomb" | "scroll" | "star"
 
-// Játékmező cellájának interfésze
-interface Cell {
+// Інтерфейс для символу
+interface GameSymbol {
   id: number
-  revealed: boolean
-  type: ItemType
+  type: SymbolType
   points: number
+  revealed: boolean
+  position: number
+  row: number
 }
 
-// Játék konfigurációs interfésze
-interface GameConfig {
-  rows: number
-  cols: number
-  itemDistribution: Record<ItemType, number>
-  pointsMap: Record<ItemType, number>
-  revealCount: number
+// Інтерфейс для поп-апу
+interface PopupInfo {
+  show: boolean
+  pointsChange: number
+  bonus: number
+  bonusMessage: string
 }
 
 export default function GamePage() {
-  // Játék konfiguráció
-  const gameConfig: GameConfig = {
-    rows: 5,
-    cols: 5,
-    itemDistribution: {
-      műtárgy: 5,
-      kincs: 3,
-      koponya: 2,
-      bomba: 2,
-      érmék: 3,
-      tekercs: 10,
-    },
-    pointsMap: {
-      műtárgy: 50,
-      kincs: 100,
-      koponya: 25,
-      bomba: -50,
-      érmék: -25,
-      tekercs: 10,
-    },
-    revealCount: 2, // Hány mező legyen felfedve egy kattintásra
+  const [score, setScore] = useState(0)
+  const [symbols, setSymbols] = useState<GameSymbol[]>([])
+  const [isSpinning, setIsSpinning] = useState(false)
+  const [spinCount, setSpinCount] = useState(10)
+  const [lastPointsChange, setLastPointsChange] = useState(0)
+  const [gameOver, setGameOver] = useState(false)
+  const [showDisclaimer, setShowDisclaimer] = useState(false)
+  const activeRow = 1 // Середній рядок завжди активний (0, 1, 2)
+  const [popup, setPopup] = useState<PopupInfo>({
+    show: false,
+    pointsChange: 0,
+    bonus: 0,
+    bonusMessage: "",
+  })
+
+  const popupRef = useRef<HTMLDivElement>(null)
+
+  // Конфігурація символів та їх вартості
+  const symbolConfig = {
+    gem: { points: 50, chance: 15, icon: Gem, color: "text-purple-500" },
+    coins: { points: 25, chance: 20, icon: Coins, color: "text-amber-500" },
+    skull: { points: -15, chance: 20, icon: Skull, color: "text-gray-700" },
+    bomb: { points: -50, chance: 10, icon: Bomb, color: "text-red-500" },
+    scroll: { points: 10, chance: 25, icon: Scroll, color: "text-amber-700" },
+    star: { points: 100, chance: 10, icon: Star, color: "text-yellow-400" },
   }
 
-  const [score, setScore] = useState(0)
-  const [cells, setCells] = useState<Cell[]>([])
-  const [gameOver, setGameOver] = useState(false)
-  const [remainingMoves, setRemainingMoves] = useState(10)
-  const [lastRevealedCells, setLastRevealedCells] = useState<number[]>([])
-  const [isAnimating, setIsAnimating] = useState(false)
-  const [lastPointsChange, setLastPointsChange] = useState(0)
-
-  // Játék inicializálása
+  // Ініціалізація гри
   useEffect(() => {
     initializeGame()
   }, [])
 
-  // Játék inicializáló függvény
-  const initializeGame = () => {
-    const totalCells = gameConfig.rows * gameConfig.cols
-
-    // Létrehozunk egy tömböt az összes elem típussal a megadott eloszlás szerint
-    let items: ItemType[] = []
-    Object.entries(gameConfig.itemDistribution).forEach(([type, count]) => {
-      for (let i = 0; i < count; i++) {
-        items.push(type as ItemType)
+  // Закриття поп-апу при кліку поза ним
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
+        setPopup((prev) => ({ ...prev, show: false }))
       }
-    })
-
-    // Ha kevesebb elem van, mint cella, üres cellákat adunk hozzá
-    while (items.length < totalCells) {
-      items.push("tekercs")
     }
 
-    // Ha több elem van, mint cella, levágjuk a tömböt
-    if (items.length > totalCells) {
-      items = items.slice(0, totalCells)
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
     }
+  }, [])
 
-    // Megkeverjük az elemek tömbjét
-    items = shuffleArray(items)
-
-    // Létrehozzuk a cellákat
-    const newCells = Array.from({ length: totalCells }, (_, index) => ({
-      id: index,
-      revealed: false,
-      type: items[index],
-      points: gameConfig.pointsMap[items[index]],
-    }))
-
-    setCells(newCells)
+  // Функція ініціалізації гри
+  const initializeGame = () => {
     setScore(0)
+    setSpinCount(10)
     setGameOver(false)
-    setRemainingMoves(10)
-    setLastRevealedCells([])
     setLastPointsChange(0)
+    setSymbols([])
+    setPopup({
+      show: false,
+      pointsChange: 0,
+      bonus: 0,
+      bonusMessage: "",
+    })
   }
 
-  // Tömb keverő függvény
-  const shuffleArray = <T,>(array: T[]): T[] => {
-    const newArray = [...array]
-    for (let i = newArray.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[newArray[i], newArray[j]] = [newArray[j], newArray[i]]
+  // Функція для отримання випадкового символу
+  const getRandomSymbol = (): SymbolType => {
+    const symbolTypes = Object.keys(symbolConfig) as SymbolType[]
+    const totalChance = Object.values(symbolConfig).reduce((sum, config) => sum + config.chance, 0)
+
+    const random = Math.random() * totalChance
+    let cumulativeChance = 0
+
+    for (const type of symbolTypes) {
+      cumulativeChance += symbolConfig[type].chance
+      if (random <= cumulativeChance) {
+        return type
+      }
     }
-    return newArray
+
+    return "scroll" // Запасний варіант
   }
 
-  // Játék gomb kezelése - véletlenszerű cellák felfedése
-  const handlePlayClick = () => {
-    if (gameOver || isAnimating) return
-
-    setIsAnimating(true)
-
-    // Csak a még nem felfedett cellák közül választunk
-    const hiddenCells = cells.filter((cell) => !cell.revealed).map((cell) => cell.id)
-
-    // Ha nincs elég felfedetlen cella, akkor a játék véget ér
-    if (hiddenCells.length < gameConfig.revealCount) {
-      setGameOver(true)
-      setIsAnimating(false)
+  // Функція для створення нових рядків символів
+  const generateSymbolLines = () => {
+    if (spinCount <= 0 || isSpinning) {
+      if (spinCount <= 0) setGameOver(true)
       return
     }
 
-    // Véletlenszerűen kiválasztunk néhány cellát
-    const shuffledHiddenCells = shuffleArray(hiddenCells)
-    const cellsToReveal = shuffledHiddenCells.slice(0, gameConfig.revealCount)
+    // Закриваємо поп-ап, якщо він відкритий
+    setPopup((prev) => ({ ...prev, show: false }))
 
-    setLastRevealedCells(cellsToReveal)
+    setIsSpinning(true)
+    setSpinCount((prev) => prev - 1)
 
-    // Frissítjük a cellákat
-    const updatedCells = cells.map((cell) => {
-      if (cellsToReveal.includes(cell.id)) {
-        return { ...cell, revealed: true }
+    // Створюємо нові символи для 3 рядків
+    const lineLength = Math.floor(Math.random() * 2) + 4 // Від 4 до 5 символів у рядку
+    const newSymbols: GameSymbol[] = []
+    const baseId = Date.now()
+
+    // Генеруємо символи для всіх 3 рядків
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < lineLength; i++) {
+        const type = getRandomSymbol()
+        newSymbols.push({
+          id: baseId + row * 100 + i,
+          type,
+          points: symbolConfig[type].points,
+          revealed: false,
+          position: i,
+          row,
+        })
       }
-      return cell
-    })
+    }
 
-    // Kiszámoljuk a pontváltozást
-    const pointsChange = cellsToReveal.reduce((total, cellId) => {
-      const cell = cells.find((c) => c.id === cellId)
-      return total + (cell?.points || 0)
-    }, 0)
+    // Додаємо символи з анімацією появи
+    setSymbols([])
 
-    // Frissítjük a pontszámot
-    setScore((prevScore) => prevScore + pointsChange)
-    setLastPointsChange(pointsChange)
+    // Послідовно відкриваємо символи
+    const delay = 150
+    let allRevealed = 0
+    const totalSymbols = newSymbols.length
 
-    // Csökkentjük a hátralévő lépések számát
-    setRemainingMoves((prevMoves) => {
-      const newMoves = prevMoves - 1
-      if (newMoves <= 0) {
-        setGameOver(true)
+    // Спочатку показуємо перший стовпець всіх рядків, потім другий і т.д.
+    for (let col = 0; col < lineLength; col++) {
+      for (let row = 0; row < 3; row++) {
+        const symbolIndex = row * lineLength + col
+
+        setTimeout(
+          () => {
+            setSymbols((prev) => {
+              const updatedSymbols = [...prev]
+              const newSymbol = { ...newSymbols[symbolIndex], revealed: true }
+
+              // Знаходимо правильний індекс для вставки
+              const existingIndex = updatedSymbols.findIndex((s) => s.id === newSymbol.id)
+              if (existingIndex >= 0) {
+                updatedSymbols[existingIndex] = newSymbol
+              } else {
+                updatedSymbols.push(newSymbol)
+              }
+
+              return updatedSymbols
+            })
+
+            allRevealed++
+
+            // Коли всі символи відкриті, обчислюємо результат
+            if (allRevealed === totalSymbols) {
+              setTimeout(() => {
+                // Отримуємо символи активного рядка
+                const activeRowSymbols = newSymbols.filter((s) => s.row === activeRow)
+
+                // Обчислюємо бали за активний рядок
+                const pointsChange = activeRowSymbols.reduce((sum, symbol) => sum + symbol.points, 0)
+
+                // Оновлюємо рахунок
+                setScore((prev) => prev + pointsChange)
+                setLastPointsChange(pointsChange)
+
+                // Перевіряємо спеціальні комбінації і показуємо поп-ап
+                const { bonus, bonusMessage } = checkSpecialCombinations(activeRowSymbols)
+
+                // Показуємо поп-ап з результатами
+                setPopup({
+                  show: true,
+                  pointsChange,
+                  bonus,
+                  bonusMessage,
+                })
+
+                // Якщо є бонус, додаємо його до рахунку
+                if (bonus > 0) {
+                  setTimeout(() => {
+                    setScore((prev) => prev + bonus)
+                    setLastPointsChange(bonus)
+                  }, 1000)
+                }
+
+                setIsSpinning(false)
+              }, 500)
+            }
+          },
+          delay * (col * 3 + row + 1),
+        )
       }
-      return newMoves
-    })
-
-    setCells(updatedCells)
-
-    // Animáció időzítő
-    setTimeout(() => {
-      setIsAnimating(false)
-    }, 1000)
+    }
   }
 
-  // Ikon lekérése az elem típusához
-  const getItemIcon = (type: ItemType, size = 24) => {
-    const iconProps = { size, className: "mx-auto" }
+  // Перевірка спеціальних комбінацій
+  const checkSpecialCombinations = (currentSymbols: GameSymbol[]) => {
+    // Перевірка на три однакових символи підряд
+    const types = currentSymbols.map((s) => s.type)
+    let bonus = 0
+    let bonusMessage = ""
 
-    switch (type) {
-      case "műtárgy":
-        return <Gem {...iconProps} className="text-purple-500 mx-auto" />
-      case "kincs":
-        return <Coins {...iconProps} className="text-amber-500 mx-auto" strokeWidth={3} />
-      case "koponya":
-        return <Skull {...iconProps} className="text-gray-700 mx-auto" />
-      case "bomba":
-        return <Bomb {...iconProps} className="text-red-500 mx-auto" />
-      case "érmék":
-        return <Coins {...iconProps} className="text-amber-300 mx-auto" />
-      case "tekercs":
-        return <Scroll {...iconProps} className="text-amber-700 mx-auto" />
+    // Перевірка на три однакових символи
+    const typeCounts: Record<SymbolType, number> = {
+      gem: 0,
+      coins: 0,
+      skull: 0,
+      bomb: 0,
+      scroll: 0,
+      star: 0,
     }
+
+    types.forEach((type) => {
+      typeCounts[type]++
+    })
+
+    // Бонус за три однакових
+    Object.entries(typeCounts).forEach(([type, count]) => {
+      if (count >= 3) {
+        const symbolType = type as SymbolType
+        const basePoints = symbolConfig[symbolType].points
+        bonus += basePoints * count * 2
+        bonusMessage = `${count}x ${type} комбінація! +${basePoints * count * 2} бонус!`
+      }
+    })
+
+    // Бонус за всі різні символи
+    const uniqueTypes = new Set(types)
+    if (uniqueTypes.size === currentSymbols.length && currentSymbols.length >= 4) {
+      bonus += 100
+      bonusMessage = "Всі різні символи! +100 бонус!"
+    }
+
+    return { bonus, bonusMessage }
+  }
+
+  // Отримання іконки для символу
+  const getSymbolIcon = (type: SymbolType, size = 36) => {
+    const IconComponent = symbolConfig[type].icon
+    return <IconComponent size={size} className={`${symbolConfig[type].color} mx-auto`} />
+  }
+
+  // Закриття поп-апу
+  const closePopup = () => {
+    setPopup((prev) => ({ ...prev, show: false }))
   }
 
   return (
@@ -203,20 +278,7 @@ export default function GamePage() {
 
       <main className="flex-grow py-8 bg-amber-50">
         <div className="container mx-auto px-4">
-          <h1 className="text-3xl font-bold mb-8 text-center">Régészeti Expedíció</h1>
-
-          <div className="max-w-4xl mx-auto mb-8">
-            <div className="bg-amber-100 p-6 rounded-lg text-center border border-amber-200">
-              <h2 className="text-xl font-semibold mb-4">Segíts a régésznek megtalálni a kincseket!</h2>
-              <p className="text-lg mb-2">
-                A régész ősi romokat kutat értékes műtárgyak után. Segíts neki megtalálni a legjobb ásatási helyeket!
-              </p>
-              <p className="text-lg">
-                Kattints az "Ásatás" gombra, hogy véletlenszerűen kiválassz két helyet az ásatásra. Találj műtárgyakat
-                és kincseket pontokért, de vigyázz a bombákra és csapdákra, amelyek károsíthatják a kutatásodat!
-              </p>
-            </div>
-          </div>
+          <h1 className="text-3xl font-bold mb-8 text-center">Régészeti Szerencsekerék</h1>
 
           <div className="max-w-4xl mx-auto">
             <div className="flex flex-col md:flex-row gap-8">
@@ -237,18 +299,74 @@ export default function GamePage() {
                     </div>
 
                     <div className="text-center mb-6">
-                      <h2 className="text-xl font-semibold mb-2">Hátralévő Próbálkozások</h2>
-                      <p className="text-3xl font-bold text-amber-500">{remainingMoves}</p>
+                      <h2 className="text-xl font-semibold mb-2">Hátralévő Pörgetések</h2>
+                      <p className="text-3xl font-bold text-amber-500">{spinCount}</p>
                     </div>
 
-                    <div className="text-center mb-6">
+                    <div className="text-center mb-6 relative">
                       <Button
-                        onClick={handlePlayClick}
-                        disabled={gameOver || isAnimating}
+                        onClick={generateSymbolLines}
+                        disabled={gameOver || isSpinning || spinCount <= 0}
                         className="bg-amber-600 hover:bg-amber-700 w-full py-6 text-lg"
                       >
-                        {isAnimating ? "Ásatás folyamatban..." : "Ásatás!"}
+                        {isSpinning ? "Pörgetés folyamatban..." : "Pörgetés!"}
                       </Button>
+
+                      {/* Поп-ап з результатами */}
+                      {popup.show && (
+                        <div
+                          ref={popupRef}
+                          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg border-2 border-amber-400 shadow-lg p-4 z-10 animate-popup"
+                        >
+                          <button
+                            onClick={closePopup}
+                            className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+                          >
+                            <ChevronUp size={16} />
+                          </button>
+
+                          <h3 className="font-bold text-lg mb-2">Eredmény</h3>
+
+                          <div className="flex justify-between items-center mb-2">
+                            <span>Alap pontok:</span>
+                            <span
+                              className={
+                                popup.pointsChange >= 0 ? "text-green-600 font-bold" : "text-red-600 font-bold"
+                              }
+                            >
+                              {popup.pointsChange >= 0 ? `+${popup.pointsChange}` : popup.pointsChange}
+                            </span>
+                          </div>
+
+                          {popup.bonus > 0 && (
+                            <div className="flex justify-between items-center mb-2">
+                              <span>Bónusz:</span>
+                              <span className="text-green-600 font-bold">+{popup.bonus}</span>
+                            </div>
+                          )}
+
+                          <div className="border-t border-gray-200 mt-2 pt-2 flex justify-between items-center">
+                            <span className="font-bold">Összesen:</span>
+                            <span
+                              className={
+                                popup.pointsChange + popup.bonus >= 0
+                                  ? "text-green-600 font-bold"
+                                  : "text-red-600 font-bold"
+                              }
+                            >
+                              {popup.pointsChange + popup.bonus >= 0
+                                ? `+${popup.pointsChange + popup.bonus}`
+                                : popup.pointsChange + popup.bonus}
+                            </span>
+                          </div>
+
+                          {popup.bonusMessage && (
+                            <div className="mt-2 p-2 bg-amber-100 rounded-lg text-amber-800 text-sm">
+                              {popup.bonusMessage}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {gameOver && (
@@ -269,73 +387,76 @@ export default function GamePage() {
               <div className="md:w-2/3">
                 <Card className="border-amber-300">
                   <CardContent className="p-6">
-                    <div
-                      className="grid gap-2"
-                      style={{
-                        gridTemplateColumns: `repeat(${gameConfig.cols}, 1fr)`,
-                        gridTemplateRows: `repeat(${gameConfig.rows}, 1fr)`,
-                      }}
-                    >
-                      {cells.map((cell) => (
-                        <div
-                          key={cell.id}
-                          className={`aspect-square border-2 rounded-md flex items-center justify-center transition-all ${
-                            cell.revealed
-                              ? lastRevealedCells.includes(cell.id)
-                                ? "border-yellow-400 bg-yellow-50 animate-pulse"
-                                : "border-amber-200 bg-amber-50"
-                              : "border-amber-300 bg-amber-100"
-                          }`}
-                          aria-label={cell.revealed ? `Felfedett mező: ${cell.type}` : "Felfedetlen mező"}
-                        >
-                          {cell.revealed ? (
-                            <div className="relative w-full h-full p-2 flex flex-col items-center justify-center">
-                              {getItemIcon(cell.type, 36)}
-                              <span
-                                className={`mt-1 text-xs font-bold px-1 rounded ${
-                                  cell.points > 0
-                                    ? "bg-green-100 text-green-700"
-                                    : cell.points < 0
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-gray-100 text-gray-700"
-                                }`}
-                              >
-                                {cell.points > 0 ? `+${cell.points}` : cell.points}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="w-full h-full bg-amber-500 rounded-sm flex items-center justify-center">
-                              <Shovel className="text-white h-8 w-8" />
-                            </div>
-                          )}
+                    <div className="min-h-[400px] flex flex-col items-center justify-center">
+                      {symbols.length === 0 ? (
+                        <div className="text-center p-8">
+                          <Shovel className="h-16 w-16 text-amber-400 mx-auto mb-4" />
+                          <p className="text-amber-800 text-lg">Kattints a "Pörgetés" gombra a játék indításához!</p>
                         </div>
-                      ))}
+                      ) : (
+                        <div className="w-full">
+                          {/* Відображення символів у 3 рядки */}
+                          <div className="space-y-4 mb-4">
+                            {[0, 1, 2].map((row) => (
+                              <div
+                                key={row}
+                                className={`flex justify-center items-center gap-2 p-2 rounded-lg relative ${row === activeRow ? "bg-amber-100 border-2 border-amber-500" : ""
+                                  }`}
+                              >
+                                {row === activeRow && (
+                                  <div className="absolute -left-6 flex items-center">
+                                    <ArrowRight className="h-5 w-5 text-amber-600" />
+                                  </div>
+                                )}
+                                {symbols
+                                  .filter((s) => s.row === row)
+                                  .sort((a, b) => a.position - b.position)
+                                  .map((symbol) => (
+                                    <div
+                                      key={symbol.id}
+                                      className={`w-16 h-16 flex flex-col items-center justify-center rounded-lg border-2 
+                                        ${symbol.revealed
+                                          ? "animate-bounce-in border-amber-400 bg-amber-50"
+                                          : "opacity-0"
+                                        }`}
+                                      style={{
+                                        animationDelay: `${symbol.position * 0.1}s`,
+                                        transform: `rotate(${Math.random() * 6 - 3}deg)`,
+                                        transition: "all 0.3s ease",
+                                      }}
+                                    >
+                                      {getSymbolIcon(symbol.type, 28)}
+                                      <span
+                                        className={`mt-1 text-xs font-bold px-1 rounded ${symbol.points > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                                          }`}
+                                      >
+                                        {symbol.points > 0 ? `+${symbol.points}` : symbol.points}
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="text-center text-sm text-amber-700 mb-4">
+                            <p>Csak a középső sor számít a pontszámításnál!</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-              </div>
-            </div>
 
-            <div className="mt-8 bg-amber-100 p-6 rounded-lg border border-amber-200">
-              <h2 className="text-xl font-semibold mb-4">Hogyan játssz:</h2>
-              <ol className="list-decimal pl-5 space-y-2">
-                <li>
-                  Kattints az "Ásatás!" gombra, hogy véletlenszerűen kiválassz {gameConfig.revealCount} helyet az
-                  ásatásra.
-                </li>
-                <li>A felfedett helyeken található elemek alapján pontokat kapsz vagy veszítesz.</li>
-                <li>Találj műtárgyakat, kincseket és koponyákat, hogy pontokat szerezz.</li>
-                <li>Kerüld el a bombákat és csapdákat, amelyek csökkentik a pontszámodat.</li>
-                <li>Korlátozott számú próbálkozásod van - használd őket bölcsen!</li>
-                <li>A játék befejezése után újrakezdheted és megpróbálhatod javítani az eredményedet.</li>
-              </ol>
-
-              <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-amber-800 font-medium">
-                  Emlékeztetjük: ez egy közösségi platform, teljesen ingyenes, nem igényel pénzügyi befektetést, nem
-                  biztosít lehetőséget valódi pénz nyereményre. Minden virtuális tárgy és pont nem rendelkezik valós
-                  értékkel.
-                </p>
+                <div className="mt-6 grid grid-cols-6 gap-2">
+                  {Object.entries(symbolConfig).map(([type, config]) => (
+                    <div key={type} className="bg-white p-2 rounded-lg border border-amber-200 text-center">
+                      {getSymbolIcon(type as SymbolType, 24)}
+                      <span className={`text-xs font-bold ${config.points > 0 ? "text-green-600" : "text-red-600"}`}>
+                        {config.points > 0 ? `+${config.points}` : config.points}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -345,6 +466,32 @@ export default function GamePage() {
       <Footer />
 
       <DisclaimerModal />
+
+      <style jsx global>{`
+        @keyframes bounce-in {
+          0% {
+            opacity: 0;
+            transform: scale(0.3) rotate(0deg);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.05) rotate(${Math.random() * 20 - 10}deg);
+          }
+          70% { transform: scale(0.9) rotate(${Math.random() * 10 - 5}deg); }
+          100% { transform: scale(1) rotate(${Math.random() * 5 - 2.5}deg); }
+        }
+        .animate-bounce-in {
+          animation: bounce-in 0.6s ease forwards;
+        }
+        
+        @keyframes popup {
+          0% { opacity: 0; transform: translateY(-10px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-popup {
+          animation: popup 0.3s ease forwards;
+        }
+      `}</style>
     </div>
   )
 }
