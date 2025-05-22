@@ -32,8 +32,8 @@ interface PopupInfo {
 export default function GamePage() {
   const [score, setScore] = useState(0)
   const [symbols, setSymbols] = useState<GameSymbol[]>([])
-  const [isSpinning, setIsSpinning] = useState(false)
-  const [spinCount, setSpinCount] = useState(10)
+  const [isRtv, setIsRtv] = useState(false)
+  const [rtvCount, setRtvCount] = useState(10)
   const [lastPointsChange, setLastPointsChange] = useState(0)
   const [gameOver, setGameOver] = useState(false)
   const [showDisclaimer, setShowDisclaimer] = useState(false)
@@ -79,7 +79,7 @@ export default function GamePage() {
   // Функція ініціалізації гри
   const initializeGame = () => {
     setScore(0)
-    setSpinCount(10)
+    setRtvCount(10)
     setGameOver(false)
     setLastPointsChange(0)
     setSymbols([])
@@ -111,16 +111,16 @@ export default function GamePage() {
 
   // Функція для створення нових рядків символів
   const generateSymbolLines = () => {
-    if (spinCount <= 0 || isSpinning) {
-      if (spinCount <= 0) setGameOver(true)
+    if (rtvCount <= 0 || isRtv) {
+      if (rtvCount <= 0) setGameOver(true)
       return
     }
 
     // Закриваємо поп-ап, якщо він відкритий
     setPopup((prev) => ({ ...prev, show: false }))
 
-    setIsSpinning(true)
-    setSpinCount((prev) => prev - 1)
+    setIsRtv(true)
+    setRtvCount((prev) => prev - 1)
 
     // Створюємо нові символи для 3 рядків
     const lineLength = Math.floor(Math.random() * 2) + 4 // Від 4 до 5 символів у рядку
@@ -206,7 +206,7 @@ export default function GamePage() {
                   }, 1000)
                 }
 
-                setIsSpinning(false)
+                setIsRtv(false)
               }, 500)
             }
           },
@@ -300,16 +300,16 @@ export default function GamePage() {
 
                     <div className="text-center mb-6">
                       <h2 className="text-xl font-semibold mb-2">Hátralévő Pörgetések</h2>
-                      <p className="text-3xl font-bold text-amber-500">{spinCount}</p>
+                      <p className="text-3xl font-bold text-amber-500">{rtvCount}</p>
                     </div>
 
                     <div className="text-center mb-6 relative">
                       <Button
                         onClick={generateSymbolLines}
-                        disabled={gameOver || isSpinning || spinCount <= 0}
+                        disabled={gameOver || isRtv || rtvCount <= 0}
                         className="bg-amber-600 hover:bg-amber-700 w-full py-6 text-lg"
                       >
-                        {isSpinning ? "Pörgetés folyamatban..." : "Pörgetés!"}
+                        {isRtv ? "Pörgetés folyamatban..." : "Pörgetés!"}
                       </Button>
 
                       {/* Поп-ап з результатами */}
