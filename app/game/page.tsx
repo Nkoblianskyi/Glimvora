@@ -6,10 +6,10 @@ import { Card, CardContent } from "@/components/ui/card"
 import Header from "@/components/header"
 import Footer from "@/components/footer"
 import DisclaimerModal from "@/components/disclaimer-modal"
-import { Gem, Shovel, Skull, Bomb, Coins, Scroll, Star, ChevronUp, ArrowRight } from "lucide-react"
+import { Gem, Shovel, Skull, Bomb, Book, Scroll, Trophy, ChevronUp, ArrowRight, Award, TrendingUp } from "lucide-react"
 
 // Типи символів
-type SymbolType = "gem" | "coins" | "skull" | "bomb" | "scroll" | "star"
+type SymbolType = "gem" | "book" | "skull" | "bomb" | "scroll" | "trophy"
 
 // Інтерфейс для символу
 interface GameSymbol {
@@ -25,36 +25,68 @@ interface GameSymbol {
 interface PopupInfo {
   show: boolean
   pointsChange: number
-  bonus: number
-  bonusMessage: string
+  extraPoints: number
+  specialMessage: string
 }
+
+// Інтерфейс для повідомлення про підвищення рівня
+interface LevelUpInfo {
+  show: boolean
+  newLevel: number
+  rewards: string[]
+}
+
+// Конфігурація рівнів
+const levelConfig = [
+  { level: 1, title: "Kezdő Régész", expRequired: 0, pointsMultiplier: 1.0 },
+  { level: 2, title: "Amatőr Kutató", expRequired: 100, pointsMultiplier: 1.1 },
+  { level: 3, title: "Tapasztalt Ásató", expRequired: 250, pointsMultiplier: 1.2 },
+  { level: 4, title: "Szakértő Régész", expRequired: 500, pointsMultiplier: 1.3 },
+  { level: 5, title: "Mester Archeológus", expRequired: 1000, pointsMultiplier: 1.4 },
+  { level: 6, title: "Legendás Felfedező", expRequired: 2000, pointsMultiplier: 1.5 },
+  { level: 7, title: "Ősi Titkok Tudója", expRequired: 3500, pointsMultiplier: 1.6 },
+  { level: 8, title: "Történelem Őrzője", expRequired: 5000, pointsMultiplier: 1.7 },
+  { level: 9, title: "Civilizációk Ismerője", expRequired: 7500, pointsMultiplier: 1.8 },
+  { level: 10, title: "Régészet Professzora", expRequired: 10000, pointsMultiplier: 2.0 },
+]
 
 export default function GamePage() {
   const [score, setScore] = useState(0)
   const [symbols, setSymbols] = useState<GameSymbol[]>([])
-  const [isRtv, setIsRtv] = useState(false)
-  const [rtvCount, setRtvCount] = useState(10)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [attemptsLeft, setAttemptsLeft] = useState(10)
   const [lastPointsChange, setLastPointsChange] = useState(0)
   const [gameOver, setGameOver] = useState(false)
   const [showDisclaimer, setShowDisclaimer] = useState(false)
   const activeRow = 1 // Середній рядок завжди активний (0, 1, 2)
+
+  // Нові стани для системи рівнів
+  const [level, setLevel] = useState(1)
+  const [experience, setExperience] = useState(0)
+  const [levelUpInfo, setLevelUpInfo] = useState<LevelUpInfo>({
+    show: false,
+    newLevel: 1,
+    rewards: [],
+  })
+
   const [popup, setPopup] = useState<PopupInfo>({
     show: false,
     pointsChange: 0,
-    bonus: 0,
-    bonusMessage: "",
+    extraPoints: 0,
+    specialMessage: "",
   })
 
   const popupRef = useRef<HTMLDivElement>(null)
+  const levelUpRef = useRef<HTMLDivElement>(null)
 
   // Конфігурація символів та їх вартості
   const symbolConfig = {
     gem: { points: 50, chance: 15, icon: Gem, color: "text-purple-500" },
-    coins: { points: 25, chance: 20, icon: Coins, color: "text-amber-500" },
+    book: { points: 25, chance: 20, icon: Book, color: "text-amber-500" },
     skull: { points: -15, chance: 20, icon: Skull, color: "text-gray-700" },
     bomb: { points: -50, chance: 10, icon: Bomb, color: "text-red-500" },
     scroll: { points: 10, chance: 25, icon: Scroll, color: "text-amber-700" },
-    star: { points: 100, chance: 10, icon: Star, color: "text-yellow-400" },
+    trophy: { points: 100, chance: 10, icon: Trophy, color: "text-yellow-400" },
   }
 
   // Ініціалізація гри
@@ -68,6 +100,9 @@ export default function GamePage() {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
         setPopup((prev) => ({ ...prev, show: false }))
       }
+      if (levelUpRef.current && !levelUpRef.current.contains(event.target as Node)) {
+        setLevelUpInfo((prev) => ({ ...prev, show: false }))
+      }
     }
 
     document.addEventListener("mousedown", handleClickOutside)
@@ -79,16 +114,17 @@ export default function GamePage() {
   // Функція ініціалізації гри
   const initializeGame = () => {
     setScore(0)
-    setRtvCount(10)
+    setAttemptsLeft(10)
     setGameOver(false)
     setLastPointsChange(0)
     setSymbols([])
     setPopup({
       show: false,
       pointsChange: 0,
-      bonus: 0,
-      bonusMessage: "",
+      extraPoints: 0,
+      specialMessage: "",
     })
+    // Зберігаємо рівень і досвід між іграми
   }
 
   // Функція для отримання випадкового символу
@@ -111,16 +147,17 @@ export default function GamePage() {
 
   // Функція для створення нових рядків символів
   const generateSymbolLines = () => {
-    if (rtvCount <= 0 || isRtv) {
-      if (rtvCount <= 0) setGameOver(true)
+    if (attemptsLeft <= 0 || isAnimating) {
+      if (attemptsLeft <= 0) setGameOver(true)
       return
     }
 
-    // Закриваємо поп-ап, якщо він відкритий
+    // Bezárjuk a felugró ablakokat, ha nyitva vannak
     setPopup((prev) => ({ ...prev, show: false }))
+    setLevelUpInfo((prev) => ({ ...prev, show: false }))
 
-    setIsRtv(true)
-    setRtvCount((prev) => prev - 1)
+    setIsAnimating(true)
+    setAttemptsLeft((prev) => prev - 1)
 
     // Створюємо нові символи для 3 рядків
     const lineLength = Math.floor(Math.random() * 2) + 4 // Від 4 до 5 символів у рядку
@@ -142,15 +179,15 @@ export default function GamePage() {
       }
     }
 
-    // Додаємо символи з анімацією появи
+    // Hozzáadjuk a szimbólumokat megjelenési animációval
     setSymbols([])
 
-    // Послідовно відкриваємо символи
+    // Sorban feltárjuk a szimbólumokat
     const delay = 150
     let allRevealed = 0
     const totalSymbols = newSymbols.length
 
-    // Спочатку показуємо перший стовпець всіх рядків, потім другий і т.д.
+    // Először megjelenítjük az első oszlopot minden sorban, majd a másodikat, stb.
     for (let col = 0; col < lineLength; col++) {
       for (let row = 0; row < 3; row++) {
         const symbolIndex = row * lineLength + col
@@ -174,39 +211,46 @@ export default function GamePage() {
 
             allRevealed++
 
-            // Коли всі символи відкриті, обчислюємо результат
+            // Amikor minden szimbólum feltárult, kiszámítjuk az eredményt
             if (allRevealed === totalSymbols) {
               setTimeout(() => {
                 // Отримуємо символи активного рядка
                 const activeRowSymbols = newSymbols.filter((s) => s.row === activeRow)
 
-                // Обчислюємо бали за активний рядок
-                const pointsChange = activeRowSymbols.reduce((sum, symbol) => sum + symbol.points, 0)
+                // Обчислюємо бали за активний рядок з урахуванням множника рівня
+                const levelMultiplier = getCurrentLevelMultiplier()
+                const basePoints = activeRowSymbols.reduce((sum, symbol) => sum + symbol.points, 0)
+                const pointsChange = Math.round(basePoints * levelMultiplier)
 
                 // Оновлюємо рахунок
                 setScore((prev) => prev + pointsChange)
                 setLastPointsChange(pointsChange)
 
                 // Перевіряємо спеціальні комбінації і показуємо поп-ап
-                const { bonus, bonusMessage } = checkSpecialCombinations(activeRowSymbols)
+                const { extraPoints, specialMessage } = checkSpecialCombinations(activeRowSymbols)
+                const totalExtraPoints = Math.round(extraPoints * levelMultiplier)
 
                 // Показуємо поп-ап з результатами
                 setPopup({
                   show: true,
                   pointsChange,
-                  bonus,
-                  bonusMessage,
+                  extraPoints: totalExtraPoints,
+                  specialMessage,
                 })
 
-                // Якщо є бонус, додаємо його до рахунку
-                if (bonus > 0) {
+                // Якщо є додаткові бали, додаємо їх до рахунку
+                if (totalExtraPoints > 0) {
                   setTimeout(() => {
-                    setScore((prev) => prev + bonus)
-                    setLastPointsChange(bonus)
+                    setScore((prev) => prev + totalExtraPoints)
+                    setLastPointsChange(totalExtraPoints)
                   }, 1000)
                 }
 
-                setIsRtv(false)
+                // Нараховуємо досвід за спробу
+                const expGained = Math.max(10, Math.abs(pointsChange) + totalExtraPoints)
+                addExperience(expGained)
+
+                setIsAnimating(false)
               }, 500)
             }
           },
@@ -216,45 +260,106 @@ export default function GamePage() {
     }
   }
 
+  // Функція для отримання поточного множника рівня
+  const getCurrentLevelMultiplier = () => {
+    const currentLevelConfig = levelConfig.find((l) => l.level === level)
+    return currentLevelConfig ? currentLevelConfig.pointsMultiplier : 1.0
+  }
+
+  // Функція для отримання поточного титулу рівня
+  const getCurrentLevelTitle = () => {
+    const currentLevelConfig = levelConfig.find((l) => l.level === level)
+    return currentLevelConfig ? currentLevelConfig.title : "Kezdő Régész"
+  }
+
+  // Функція для отримання наступного рівня
+  const getNextLevel = () => {
+    const nextLevelConfig = levelConfig.find((l) => l.level === level + 1)
+    return nextLevelConfig || levelConfig[levelConfig.length - 1]
+  }
+
+  // Функція для додавання досвіду
+  const addExperience = (exp: number) => {
+    const newExperience = experience + exp
+    setExperience(newExperience)
+
+    // Перевіряємо, чи досягнуто наступного рівня
+    const nextLevel = getNextLevel()
+    if (level < nextLevel.level && newExperience >= nextLevel.expRequired) {
+      // Підвищуємо рівень
+      setLevel(nextLevel.level)
+
+      // Показуємо повідомлення про підвищення рівня
+      const rewards = [
+        `Pont szorzó: x${nextLevel.pointsMultiplier.toFixed(1)}`,
+        "Új műtárgyak felfedezése",
+        "Jobb esélyek a ritka leletekre",
+      ]
+
+      setLevelUpInfo({
+        show: true,
+        newLevel: nextLevel.level,
+        rewards,
+      })
+    }
+  }
+
+  // Функція для обчислення прогресу до наступного рівня
+  const calculateLevelProgress = () => {
+    const currentLevelConfig = levelConfig.find((l) => l.level === level)
+    const nextLevelConfig = levelConfig.find((l) => l.level === level + 1)
+
+    if (!currentLevelConfig || !nextLevelConfig) {
+      return level >= levelConfig.length ? 100 : 0
+    }
+
+    const currentLevelExp = currentLevelConfig.expRequired
+    const nextLevelExp = nextLevelConfig.expRequired
+    const expRange = nextLevelExp - currentLevelExp
+    const currentProgress = experience - currentLevelExp
+
+    return Math.min(100, Math.floor((currentProgress / expRange) * 100))
+  }
+
   // Перевірка спеціальних комбінацій
   const checkSpecialCombinations = (currentSymbols: GameSymbol[]) => {
     // Перевірка на три однакових символи підряд
     const types = currentSymbols.map((s) => s.type)
-    let bonus = 0
-    let bonusMessage = ""
+    let extraPoints = 0
+    let specialMessage = ""
 
     // Перевірка на три однакових символи
     const typeCounts: Record<SymbolType, number> = {
       gem: 0,
-      coins: 0,
+      book: 0,
       skull: 0,
       bomb: 0,
       scroll: 0,
-      star: 0,
+      trophy: 0,
     }
 
     types.forEach((type) => {
       typeCounts[type]++
     })
 
-    // Бонус за три однакових
+    // Додаткові бали за три однакових
     Object.entries(typeCounts).forEach(([type, count]) => {
       if (count >= 3) {
         const symbolType = type as SymbolType
         const basePoints = symbolConfig[symbolType].points
-        bonus += basePoints * count * 2
-        bonusMessage = `${count}x ${type} комбінація! +${basePoints * count * 2} бонус!`
+        extraPoints += basePoints * count * 2
+        specialMessage = `${count}x ${type} kombináció! +${basePoints * count * 2} extra pont!`
       }
     })
 
-    // Бонус за всі різні символи
+    // Додаткові бали за всі різні символи
     const uniqueTypes = new Set(types)
     if (uniqueTypes.size === currentSymbols.length && currentSymbols.length >= 4) {
-      bonus += 100
-      bonusMessage = "Всі різні символи! +100 бонус!"
+      extraPoints += 100
+      specialMessage = "Minden szimbólum különböző! +100 extra pont!"
     }
 
-    return { bonus, bonusMessage }
+    return { extraPoints, specialMessage }
   }
 
   // Отримання іконки для символу
@@ -268,6 +373,11 @@ export default function GamePage() {
     setPopup((prev) => ({ ...prev, show: false }))
   }
 
+  // Закриття повідомлення про підвищення рівня
+  const closeLevelUp = () => {
+    setLevelUpInfo((prev) => ({ ...prev, show: false }))
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <div className="bg-red-600 text-white p-2 text-center text-sm">
@@ -278,13 +388,40 @@ export default function GamePage() {
 
       <main className="flex-grow py-8 bg-amber-50">
         <div className="container mx-auto px-4">
-          <h1 className="text-3xl font-bold mb-8 text-center">Régészeti Szerencsekerék</h1>
+          <h1 className="text-3xl font-bold mb-8 text-center">Régészeti Expedíció</h1>
 
           <div className="max-w-4xl mx-auto">
             <div className="flex flex-col md:flex-row gap-8">
               <div className="md:w-1/3">
-                <Card className="border-amber-300">
+                <Card className="border-amber-300 mb-6">
                   <CardContent className="p-6">
+                    {/* Інформація про рівень */}
+                    <div className="text-center mb-6 bg-amber-100 p-4 rounded-lg border border-amber-200">
+                      <div className="flex items-center justify-center mb-2">
+                        <Award className="h-6 w-6 text-amber-600 mr-2" />
+                        <h2 className="text-xl font-semibold">Szint {level}</h2>
+                      </div>
+                      <p className="text-amber-800 font-medium mb-2">{getCurrentLevelTitle()}</p>
+
+                      {/* Прогрес-бар рівня */}
+                      <div className="w-full bg-amber-200 rounded-full h-4 mb-2">
+                        <div
+                          className="bg-gradient-to-r from-amber-500 to-amber-600 h-4 rounded-full transition-all duration-500 ease-out"
+                          style={{ width: `${calculateLevelProgress()}%` }}
+                        ></div>
+                      </div>
+
+                      <div className="flex justify-between text-xs text-amber-700">
+                        <span>{experience} XP</span>
+                        {level < levelConfig.length && <span>{getNextLevel().expRequired} XP</span>}
+                      </div>
+
+                      <div className="mt-2 text-sm flex items-center justify-center">
+                        <TrendingUp className="h-4 w-4 text-amber-600 mr-1" />
+                        <span>Pont szorzó: x{getCurrentLevelMultiplier().toFixed(1)}</span>
+                      </div>
+                    </div>
+
                     <div className="text-center mb-6">
                       <h2 className="text-xl font-semibold mb-2">Pontszámod</h2>
                       <p className="text-3xl font-bold text-amber-600">{score}</p>
@@ -299,17 +436,17 @@ export default function GamePage() {
                     </div>
 
                     <div className="text-center mb-6">
-                      <h2 className="text-xl font-semibold mb-2">Hátralévő Pörgetések</h2>
-                      <p className="text-3xl font-bold text-amber-500">{rtvCount}</p>
+                      <h2 className="text-xl font-semibold mb-2">Hátralévő Próbálkozások</h2>
+                      <p className="text-3xl font-bold text-amber-500">{attemptsLeft}</p>
                     </div>
 
                     <div className="text-center mb-6 relative">
                       <Button
                         onClick={generateSymbolLines}
-                        disabled={gameOver || isRtv || rtvCount <= 0}
+                        disabled={gameOver || isAnimating || attemptsLeft <= 0}
                         className="bg-amber-600 hover:bg-amber-700 w-full py-6 text-lg"
                       >
-                        {isRtv ? "Pörgetés folyamatban..." : "Pörgetés!"}
+                        {isAnimating ? "Ásatás folyamatban..." : "Ásatás!"}
                       </Button>
 
                       {/* Поп-ап з результатами */}
@@ -338,10 +475,10 @@ export default function GamePage() {
                             </span>
                           </div>
 
-                          {popup.bonus > 0 && (
+                          {popup.extraPoints > 0 && (
                             <div className="flex justify-between items-center mb-2">
-                              <span>Bónusz:</span>
-                              <span className="text-green-600 font-bold">+{popup.bonus}</span>
+                              <span>Extra pontok:</span>
+                              <span className="text-green-600 font-bold">+{popup.extraPoints}</span>
                             </div>
                           )}
 
@@ -349,20 +486,20 @@ export default function GamePage() {
                             <span className="font-bold">Összesen:</span>
                             <span
                               className={
-                                popup.pointsChange + popup.bonus >= 0
+                                popup.pointsChange + popup.extraPoints >= 0
                                   ? "text-green-600 font-bold"
                                   : "text-red-600 font-bold"
                               }
                             >
-                              {popup.pointsChange + popup.bonus >= 0
-                                ? `+${popup.pointsChange + popup.bonus}`
-                                : popup.pointsChange + popup.bonus}
+                              {popup.pointsChange + popup.extraPoints >= 0
+                                ? `+${popup.pointsChange + popup.extraPoints}`
+                                : popup.pointsChange + popup.extraPoints}
                             </span>
                           </div>
 
-                          {popup.bonusMessage && (
+                          {popup.specialMessage && (
                             <div className="mt-2 p-2 bg-amber-100 rounded-lg text-amber-800 text-sm">
-                              {popup.bonusMessage}
+                              {popup.specialMessage}
                             </div>
                           )}
                         </div>
@@ -391,7 +528,7 @@ export default function GamePage() {
                       {symbols.length === 0 ? (
                         <div className="text-center p-8">
                           <Shovel className="h-16 w-16 text-amber-400 mx-auto mb-4" />
-                          <p className="text-amber-800 text-lg">Kattints a "Pörgetés" gombra a játék indításához!</p>
+                          <p className="text-amber-800 text-lg">Kattints az "Ásatás" gombra a játék indításához!</p>
                         </div>
                       ) : (
                         <div className="w-full">
@@ -467,6 +604,47 @@ export default function GamePage() {
 
       <DisclaimerModal />
 
+      {/* Повідомлення про підвищення рівня */}
+      {levelUpInfo.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div
+            ref={levelUpRef}
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4 animate-scale-in shadow-2xl border-4 border-amber-500"
+          >
+            <div className="text-center">
+              <div className="inline-block p-4 bg-amber-100 rounded-full mb-4">
+                <Award className="h-12 w-12 text-amber-600" />
+              </div>
+
+              <h2 className="text-2xl font-bold text-amber-800 mb-2">Szintet léptél!</h2>
+              <p className="text-lg font-semibold text-amber-600 mb-4">
+                Most már {levelUpInfo.newLevel}. szintű {getCurrentLevelTitle()} vagy!
+              </p>
+
+              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 mb-4">
+                <h3 className="font-semibold text-amber-800 mb-2">Jutalmak:</h3>
+                <ul className="text-left space-y-2">
+                  {levelUpInfo.rewards.map((reward, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="inline-block bg-amber-200 rounded-full p-1 mr-2 mt-0.5">
+                        <svg className="h-3 w-3 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </span>
+                      {reward}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <Button onClick={closeLevelUp} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2">
+                Folytatás
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx global>{`
         @keyframes bounce-in {
           0% {
@@ -490,6 +668,15 @@ export default function GamePage() {
         }
         .animate-popup {
           animation: popup 0.3s ease forwards;
+        }
+        
+        @keyframes scale-in {
+          0% { opacity: 0; transform: scale(0.8); }
+          70% { transform: scale(1.05); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-scale-in {
+          animation: scale-in 0.4s ease-out forwards;
         }
       `}</style>
     </div>
